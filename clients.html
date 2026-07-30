@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Запись клиентов (онлайн)</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7fc; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.1); }
+        h1 { text-align: center; margin-bottom: 30px; color: #2c3e50; }
+        .form-card { background: #f9fafc; padding: 25px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #e9edf2; }
+        .form-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }
+        .form-group { flex: 1 1 180px; min-width: 150px; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: #555; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 1rem; background: #fff; }
+        .btn { padding: 10px 24px; border: none; border-radius: 8px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s; background: #3498db; color: white; }
+        .btn-success { background: #2ecc71; }
+        .btn-danger { background: #e74c3c; }
+        .btn-warning { background: #f39c12; }
+        .btn-outline { background: transparent; color: #3498db; border: 1px solid #3498db; }
+        .btn-sm { padding: 5px 12px; font-size: 0.85rem; }
+        .btn-notify { background: #9b59b6; color: white; padding: 5px 10px; font-size: 0.8rem; margin-right: 4px; }
+        .btn-email { background: #1abc9c; }
+        .btn-copy { background: #f1c40f; color: #333; }
+        .table-wrapper { overflow-x: auto; margin-top: 20px; border-radius: 10px; border: 1px solid #e9edf2; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+        th { background: #f1f5f9; padding: 12px 15px; text-align: left; border-bottom: 2px solid #d0d7de; }
+        td { padding: 12px 15px; border-bottom: 1px solid #e9edf2; vertical-align: middle; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .empty-msg { text-align: center; padding: 40px 20px; color: #888; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+        .search-box input { flex: 1 1 250px; padding: 10px 14px; border: 1px solid #d0d7de; border-radius: 8px; }
+        .total-badge { background: #ecf0f1; border-radius: 30px; padding: 5px 16px; font-size: 0.9rem; font-weight: 600; }
+        .notify-buttons { display: flex; gap: 5px; flex-wrap: wrap; }
+        @media (max-width: 600px) { .form-row { flex-direction: column; } .form-group { flex: 1 1 100%; } }
+
+        /* Модальное окно */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: #fff;
+            max-width: 500px;
+            width: 90%;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            position: relative;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-box h3 { margin-top: 0; color: #2c3e50; }
+        .modal-box .message {
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 1rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .modal-box .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .modal-box .btn-group .btn { flex: 1; min-width: 100px; }
+        .modal-close {
+            position: absolute;
+            right: 15px;
+            top: 15px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #aaa;
+        }
+        .modal-close:hover { color: #333; }
+        .tag-scheduled {
+            background: #f39c12;
+            color: #fff;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 5px;
+        }
+        .tag-sent {
+            background: #2ecc71;
+            color: #fff;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="app">
+        <h1>📋 Запись клиентов (онлайн)</h1>
+
+        <div class="form-card">
+            <form id="clientForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="name">Имя *</label>
+                        <input type="text" id="name" placeholder="Иван Петров" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Телефон</label>
+                        <input type="tel" id="phone" placeholder="+7 999 123-45-67">
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" placeholder="ivan@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="service">Услуга</label>
+                        <select id="service">
+                            <option value="Лазер зона бикини">Лазер зона бикини</option>
+                            <option value="Лазер зона подмышки" selected>Лазер зона подмышки</option>
+                            <option value="Лазер зона ноги">Лазер зона ноги</option>
+                            <option value="Лазер зона руки">Лазер зона руки</option>
+                            <option value="Лазер все тело">Лазер все тело</option>
+                            <option value="Кавитация">Кавитация</option>
+                            <option value="LPG-массаж">LPG-массаж</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="date">Дата записи</label>
+                        <input type="date" id="date">
+                    </div>
+                    <div class="form-group">
+                        <label for="time">Время записи</label>
+                        <input type="time" id="time" value="10:00">
+                    </div>
+                    <div class="form-group">
+                        <label for="notifyDatetime">Дата и время уведомления (отлож.)</label>
+                        <input type="datetime-local" id="notifyDatetime">
+                    </div>
+                    <div class="form-group" style="flex: 0 0 auto;">
+                        <button type="submit" class="btn btn-success" id="submitBtn">➕ Добавить</button>
+                        <button type="button" class="btn btn-outline" id="cancelBtn" style="display:none;">Отмена</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="🔍 Поиск..." />
+            <button class="btn" id="clearSearchBtn">✖ Очистить</button>
+            <span class="total-badge" id="totalClients">Всего: 0</span>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Имя</th>
+                        <th>Телефон</th>
+                        <th>Email</th>
+                        <th>Услуга</th>
+                        <th>Дата</th>
+                        <th>Время</th>
+                        <th>Уведомить</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="clientTableBody"></tbody>
+            </table>
+        </div>
+        <div id="emptyMessage" class="empty-msg">Нет клиентов. Добавьте первого!</div>
+    </div>
+
+    <!-- Модальное окно для уведомлений -->
+    <div class="modal-overlay" id="notificationModal">
+        <div class="modal-box">
+            <span class="modal-close" id="modalClose">&times;</span>
+            <h3 id="modalTitle">📨 Уведомление</h3>
+            <div class="message" id="modalMessage"></div>
+            <div class="btn-group">
+                <button class="btn btn-copy" id="modalCopyBtn">📋 Копировать текст</button>
+                <button class="btn btn-success" id="modalSendBtn">📤 Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============ ВАШИ ДАННЫЕ FIREBASE ============
+        const firebaseConfig = {
+            apiKey: "AIzaSyBh8iy3KERu_xVC2QZz82cazBJ_Jih4xdM",
+            authDomain: "clients-app-b0b13.firebaseapp.com",
+            databaseURL: "https://clients-app-b0b13-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "clients-app-b0b13",
+            storageBucket: "clients-app-b0b13.firebasestorage.app",
+            messagingSenderId: "492289150075",
+            appId: "1:492289150075:web:910baa4075be9f90aba6de",
+            measurementId: "G-7G1F91PHJP"
+        };
+        // ==============================================
+
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // --- Переменные ---
+        let clients = [];
+        let editingId = null;
+        let currentNotifyClient = null;
+        let currentNotifyType = ''; // 'sms' или 'email'
+        let checkInterval = null;
+
+        // DOM элементы
+        const form = document.getElementById('clientForm');
+        const nameInput = document.getElementById('name');
+        const phoneInput = document.getElementById('phone');
+        const emailInput = document.getElementById('email');
+        const serviceSelect = document.getElementById('service');
+        const dateInput = document.getElementById('date');
+        const timeInput = document.getElementById('time');
+        const notifyDatetimeInput = document.getElementById('notifyDatetime');
+        const submitBtn = document.getElementById('submitBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const tbody = document.getElementById('clientTableBody');
+        const emptyMsg = document.getElementById('emptyMessage');
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const totalSpan = document.getElementById('totalClients');
+
+        // Модальное окно
+        const modal = document.getElementById('notificationModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalCopyBtn = document.getElementById('modalCopyBtn');
+        const modalSendBtn = document.getElementById('modalSendBtn');
+        const modalClose = document.getElementById('modalClose');
+
+        // --- Слушатель Firebase ---
+        function listenClients() {
+            const clientsRef = database.ref('clients');
+            clientsRef.on('value', snapshot => {
+                const data = snapshot.val();
+                if (data) {
+                    clients = Object.keys(data).map(key => ({
+                        id: key,
+                        ...data[key]
+                    }));
+                } else {
+                    clients = [];
+                }
+                render(searchInput.value);
+                checkScheduledNotifications(); // проверить отложенные при загрузке
+            });
+        }
+
+        // --- Сохранение ---
+        function saveClient(clientData, id = null) {
+            const ref = database.ref('clients');
+            if (id) {
+                return ref.child(id).update(clientData);
+            } else {
+                return ref.push(clientData);
+            }
+        }
+
+        // --- Удаление ---
+        function deleteClient(id) {
+            if (!confirm('Удалить клиента?')) return;
+            database.ref('clients/' + id).remove();
+        }
+
+        // --- Вспомогательные ---
+        function validateForm() {
+            if (!nameInput.value.trim()) {
+                alert('Введите имя');
+                nameInput.focus();
+                return false;
+            }
+            return true;
+        }
+
+        function getFormData() {
+            return {
+                name: nameInput.value.trim(),
+                phone: phoneInput.value.trim(),
+                email: emailInput.value.trim(),
+                service: serviceSelect.value,
+                date: dateInput.value || new Date().toISOString().split('T')[0],
+                time: timeInput.value || '10:00',
+                notifyDateTime: notifyDatetimeInput.value || '',
+                notified: false // флаг, что уведомление уже отправлено (для отложенных)
+            };
+        }
+
+        function resetForm() {
+            form.reset();
+            editingId = null;
+            submitBtn.textContent = '➕ Добавить';
+            cancelBtn.style.display = 'none';
+            if (!dateInput.value) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+            if (!timeInput.value) timeInput.value = '10:00';
+            serviceSelect.value = 'Лазер зона подмышки';
+            notifyDatetimeInput.value = '';
+        }
+
+        function fillForm(client) {
+            nameInput.value = client.name;
+            phoneInput.value = client.phone || '';
+            emailInput.value = client.email || '';
+            serviceSelect.value = client.service || 'Лазер зона подмышки';
+            dateInput.value = client.date || '';
+            timeInput.value = client.time || '10:00';
+            notifyDatetimeInput.value = client.notifyDateTime || '';
+            editingId = client.id;
+            submitBtn.textContent = '💾 Сохранить';
+            cancelBtn.style.display = 'inline-block';
+        }
+
+        // --- Уведомления ---
+        function buildNotificationText(client) {
+            const dateTime = client.date && client.time ? `${formatDate(client.date)} в ${client.time}` : 'сегодня';
+            return `Здравствуйте, ${client.name}! Вы записаны в студию лазерной эпиляции и коррекции фигуры "Mell Studio" на процедуру "${client.service}", ${dateTime}.`;
+        }
+
+        function showNotificationModal(client, type) {
+            currentNotifyClient = client;
+            currentNotifyType = type;
+            const text = buildNotificationText(client);
+            let title = '';
+            let recipient = '';
+            if (type === 'sms') {
+                title = '📱 SMS-уведомление';
+                recipient = client.phone || 'номер не указан';
+            } else if (type === 'email') {
+                title = '✉️ Email-уведомление';
+                recipient = client.email || 'email не указан';
+            } else {
+                title = '📨 Уведомление';
+                recipient = '';
+            }
+            modalTitle.textContent = title;
+            modalMessage.textContent = recipient ? `Кому: ${recipient}\n\n${text}` : text;
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            modal.classList.remove('active');
+        }
+
+        function copyNotification() {
+            const text = modalMessage.textContent;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => {
+                    alert('✅ Текст скопирован в буфер обмена!');
+                }).catch(() => {
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert('✅ Текст скопирован!');
+        }
+
+        function sendViaApp() {
+            if (!currentNotifyClient) return;
+            const client = currentNotifyClient;
+            const text = buildNotificationText(client);
+            const encoded = encodeURIComponent(text);
+            if (currentNotifyType === 'sms') {
+                if (client.phone) {
+                    const link = `sms:${client.phone}?body=${encoded}`;
+                    window.open(link, '_blank');
+                    navigator.clipboard.writeText(`📱 ${client.phone}\n${text}`).catch(() => {});
+                } else {
+                    alert('Нет номера телефона');
+                }
+            } else if (currentNotifyType === 'email') {
+                if (client.email) {
+                    const subject = encodeURIComponent('Запись в Mell Studio');
+                    const link = `mailto:${client.email}?subject=${subject}&body=${encoded}`;
+                    window.open(link, '_blank');
+                    navigator.clipboard.writeText(`✉️ ${client.email}\n${text}`).catch(() => {});
+                } else {
+                    alert('Нет email');
+                }
+            }
+            closeModal();
+        }
+
+        // --- Проверка отложенных уведомлений ---
+        function checkScheduledNotifications() {
+            const now = new Date();
+            clients.forEach(client => {
+                if (client.notifyDateTime && !client.notified) {
+                    const scheduled = new Date(client.notifyDateTime);
+                    if (scheduled <= now) {
+                        // Показываем уведомление
+                        showNotificationModal(client, 'sms'); // по умолчанию SMS, если нет телефона - email
+                        // Отмечаем как отправленное
+                        database.ref('clients/' + client.id).update({ notified: true });
+                    }
+                }
+            });
+        }
+
+        // Запускаем периодическую проверку (каждые 30 секунд)
+        function startScheduledCheck() {
+            if (checkInterval) clearInterval(checkInterval);
+            checkInterval = setInterval(checkScheduledNotifications, 30000);
+        }
+
+        // --- Рендер ---
+        function render(filterText = '') {
+            const term = filterText.trim().toLowerCase();
+            let filtered = clients;
+            if (term) {
+                filtered = clients.filter(c => 
+                    c.name.toLowerCase().includes(term) ||
+                    (c.phone && c.phone.toLowerCase().includes(term)) ||
+                    (c.email && c.email.toLowerCase().includes(term))
+                );
+            }
+            filtered.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+            tbody.innerHTML = '';
+            if (filtered.length === 0) {
+                emptyMsg.style.display = 'block';
+                tbody.parentElement.style.display = 'none';
+            } else {
+                emptyMsg.style.display = 'none';
+                tbody.parentElement.style.display = '';
+                filtered.forEach((client, index) => {
+                    const tr = document.createElement('tr');
+                    let notifyHtml = '<div class="notify-buttons">';
+                    if (client.phone) {
+                        notifyHtml += `<button class="btn btn-notify btn-sm" onclick="window.openNotify('${client.id}','sms')">📱 SMS</button>`;
+                    }
+                    if (client.email) {
+                        notifyHtml += `<button class="btn btn-email btn-sm" onclick="window.openNotify('${client.id}','email')">✉️ Email</button>`;
+                    }
+                    if (!client.phone && !client.email) notifyHtml += `<span style="color:#aaa;">—</span>`;
+                    notifyHtml += '</div>';
+
+                    // Отметка о запланированном уведомлении
+                    let scheduledTag = '';
+                    if (client.notifyDateTime && !client.notified) {
+                        scheduledTag = `<span class="tag-scheduled">⏳ запланировано</span>`;
+                    } else if (client.notified) {
+                        scheduledTag = `<span class="tag-sent">✅ отправлено</span>`;
+                    }
+
+                    tr.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td><strong>${escapeHtml(client.name)}</strong> ${scheduledTag}</td>
+                        <td>${escapeHtml(client.phone || '—')}</td>
+                        <td>${escapeHtml(client.email || '—')}</td>
+                        <td>${escapeHtml(client.service || '—')}</td>
+                        <td>${client.date ? formatDate(client.date) : '—'}</td>
+                        <td>${client.time || '—'}</td>
+                        <td>${notifyHtml}</td>
+                        <td>
+                            <div class="actions">
+                                <button class="btn btn-warning btn-sm" onclick="window.editClient('${client.id}')">✏️</button>
+                                <button class="btn btn-danger btn-sm" onclick="window.deleteClient('${client.id}')">🗑️</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            totalSpan.textContent = `Всего: ${clients.length}`;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '—';
+            const parts = dateStr.split('-');
+            return `${parts[2]}.${parts[1]}.${parts[0]}`;
+        }
+
+        // --- Глобальные функции для onclick ---
+        window.editClient = function(id) {
+            const client = clients.find(c => c.id === id);
+            if (client) fillForm(client);
+        };
+
+        window.deleteClient = deleteClient;
+
+        window.openNotify = function(id, type) {
+            const client = clients.find(c => c.id === id);
+            if (!client) return;
+            if (type === 'sms' && !client.phone) {
+                alert('У клиента нет номера телефона');
+                return;
+            }
+            if (type === 'email' && !client.email) {
+                alert('У клиента нет email');
+                return;
+            }
+            showNotificationModal(client, type);
+        };
+
+        // --- Обработчики формы ---
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (!validateForm()) return;
+            const data = getFormData();
+            if (editingId) {
+                saveClient(data, editingId).then(() => {
+                    resetForm();
+                });
+            } else {
+                saveClient(data).then(ref => {
+                    const newId = ref.key;
+                    const newClient = { id: newId, ...data };
+                    // Если уведомление запланировано на будущее, не показываем сразу
+                    if (data.notifyDateTime) {
+                        const scheduled = new Date(data.notifyDateTime);
+                        if (scheduled <= new Date()) {
+                            // Если время уже прошло, показываем сразу
+                            setTimeout(() => {
+                                if (newClient.phone || newClient.email) {
+                                    const type = newClient.phone ? 'sms' : 'email';
+                                    showNotificationModal(newClient, type);
+                                    // отмечаем как отправленное
+                                    database.ref('clients/' + newId).update({ notified: true });
+                                }
+                            }, 500);
+                        } else {
+                            // Запланировано на будущее
+                            alert('✅ Уведомление запланировано на ' + new Date(data.notifyDateTime).toLocaleString());
+                        }
+                    } else {
+                        // Если нет отложенной даты, предлагаем отправить сразу
+                        if (newClient.phone || newClient.email) {
+                            setTimeout(() => {
+                                const type = newClient.phone ? 'sms' : 'email';
+                                showNotificationModal(newClient, type);
+                            }, 500);
+                        }
+                    }
+                    resetForm();
+                });
+            }
+        });
+
+        cancelBtn.addEventListener('click', function() {
+            resetForm();
+            render(searchInput.value);
+        });
+
+        searchInput.addEventListener('input', function() {
+            render(this.value);
+        });
+
+        clearSearchBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            render('');
+        });
+
+        // --- Модальные обработчики ---
+        modalClose.addEventListener('click', closeModal);
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) closeModal();
+        });
+        modalCopyBtn.addEventListener('click', copyNotification);
+        modalSendBtn.addEventListener('click', sendViaApp);
+
+        // --- Инициализация ---
+        function setDefaultDate() {
+            if (!dateInput.value) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+            if (!timeInput.value) timeInput.value = '10:00';
+        }
+
+        setDefaultDate();
+        resetForm();
+        listenClients();
+        startScheduledCheck();
+
+        console.log('Приложение с отложенными уведомлениями запущено!');
+    </script>
+</body>
+</html>
